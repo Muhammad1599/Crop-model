@@ -1,0 +1,14 @@
+// Define the point using the provided latitude and longitude
+var point = ee.Geometry.Point(-85.37179681650818, 42.41329144288045);
+
+// Center the map at the point's location
+Map.centerObject(point, 10);
+
+// Add a layer to the map with the point
+Map.addLayer(point, {color: 'red'}, 'Point');
+
+// Print the point to the console
+print('Point:', point);
+
+
+

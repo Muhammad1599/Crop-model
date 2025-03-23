@@ -1,0 +1,42 @@
+Hi, these scripts are for acquisition of remote sensing data:
+
+GEE combined script:
+You need to register for an editor account in Google Earth Engine first.
+Before running GEE combined script, you have to run the "To locate lat and long points script" in which you need to mention the latitude and longitude point location.
+After locating the point location, draw a polygon on the field and clear the script environment. In the same environment, paste the GEE combined script to run for that specific polygon.
+Before running the GEE combined script, adjust the start and end date according to your need and run the script.
+
+Expected important output based on polygon:
+MODIS Leaf are index (LAI) data with visualization.
+NDVI and EVI data with visualization.
+Soil moisture data with visualization.
+Crop Phenology (emergence, initial green-up, mid green-up, senescence, end green-up and dormancy of next crop date).
+Calculated soil texture with sand, silt and clay percentages data at different depths in table.
+
+Important point: You have to wait for one minute after clicking at run and remove the layer covers for soil to better see the map.
+
+
+
+
+
+
+
+
+
+Script for high resolution LAI data:
+I am running this script in google colab environment because it require high computation and large amount of raster data (3 to 4 GB for one crop growth cycle) that need to be downloaded.
+Before running the script, just adjust the location of bounding box and date in step 3 and adjust same location in step 5. Also adjust the center lat and long in step 4. The center lat and long should be the location inside the bounding box.
+After running the script, you have to wait 15 to 20 mins and monitor the output processing:
+It will automatically request the raster images data via API access or mentioned location, filter out the high quality LAI images based on Quality flag images, process the images to calculate LAI and produce visualization of the LAI graph with csv data as well (can be accessed from data folder).
+After running the script again, it will automatically delete the previous present images data in folder.
+
+Important point: The location can only be set for EUROPE only and from 2016 onwards.
+
+Thank you.
+Muhammad Arslan.
+Working student at Klim.
+
+
+
+
+

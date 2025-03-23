@@ -1,0 +1,597 @@
+
+var polygon = geometry; 
+
+
+var startDate = '2018-01-01';
+var endDate = '2018-12-31';
+
+
+print('Geometry:', geometry);
+
+
+function handleMissingData(datasetName) {
+  print(datasetName + ' data for the specified date range is not available.');
+}
+
+
+function calculateUsdaTexture(sand, silt, clay) {
+  var texture = ee.String(ee.Algorithms.If(
+    clay.gte(40).and(silt.gte(40)), 'Silty Clay',
+    ee.Algorithms.If(
+      clay.gte(40).and(silt.lt(40)).and(sand.lte(45)), 'Clay',
+      ee.Algorithms.If(
+        clay.gte(27).and(clay.lt(40)).and(silt.gte(20)).and(silt.lte(40)).and(sand.lte(52)), 'Clay Loam',
+        ee.Algorithms.If(
+          clay.gte(27).and(clay.lt(40)).and(sand.gte(45)).and(silt.lt(28)), 'Sandy Clay Loam',
+          ee.Algorithms.If(
+            clay.gte(20).and(clay.lt(35)).and(silt.lt(28)).and(sand.gte(52).and(sand.lte(70))), 'Sandy Clay Loam',
+            ee.Algorithms.If(
+              clay.gte(20).and(clay.lt(27)).and(silt.gte(28)).and(silt.lt(50)).and(sand.lte(52)), 'Loam',
+              ee.Algorithms.If(
+                silt.gte(80).and(clay.lt(12)), 'Silt',
+                ee.Algorithms.If(
+                  silt.gte(50).and(silt.lt(80)).and(clay.lt(27)).and(sand.lte(50)), 'Silt Loam',
+                  ee.Algorithms.If(
+                    sand.gte(85), 'Sand',
+                    ee.Algorithms.If(
+                      sand.gte(70).and(sand.lt(85)).and(silt.lt(30)).and(clay.lt(15)), 'Loamy Sand',
+                      ee.Algorithms.If(
+                        sand.gte(43).and(sand.lt(52)).and(silt.gte(28)).and(silt.lte(50)).and(clay.lt(20)), 'Loam',
+                        ee.Algorithms.If(
+                          sand.gte(52).and(sand.lt(85)).and(clay.lt(20)).and(silt.gte(15).and(silt.lt(50))), 'Sandy Loam',
+                          'Unknown'
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  ));
+
+ 
+  var isUnknown = texture.compareTo('Unknown').eq(0);
+  return ee.Algorithms.If(isUnknown, nearestUsdaTexture(sand, silt, clay), texture);
+}
+
+
+function nearestUsdaTexture(sand, silt, clay) {
+  var textures = [
+    {name: 'Sand', sand: 85, silt: 10, clay: 5},
+    {name: 'Loamy Sand', sand: 80, silt: 15, clay: 5},
+    {name: 'Sandy Loam', sand: 60, silt: 30, clay: 10},
+    {name: 'Loam', sand: 40, silt: 40, clay: 20},
+    {name: 'Silt Loam', sand: 20, silt: 70, clay: 10},
+    {name: 'Silt', sand: 10, silt: 85, clay: 5},
+    {name: 'Sandy Clay Loam', sand: 60, silt: 20, clay: 20},
+    {name: 'Clay Loam', sand: 30, silt: 30, clay: 40},
+    {name: 'Silty Clay Loam', sand: 10, silt: 50, clay: 40},
+    {name: 'Sandy Clay', sand: 45, silt: 15, clay: 40},
+    {name: 'Silty Clay', sand: 10, silt: 40, clay: 50},
+    {name: 'Clay', sand: 20, silt: 20, clay: 60}
+  ];
+
+  var minDistance = 1e12;
+  var nearestTexture = 'Unknown';
+
+  textures.forEach(function(texture) {
+    var distance = Math.sqrt(
+      Math.pow(texture.sand - sand.getInfo(), 2) +
+      Math.pow(texture.silt - silt.getInfo(), 2) +
+      Math.pow(texture.clay - clay.getInfo(), 2)
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestTexture = texture.name;
+    }
+  });
+
+  return nearestTexture;
+}
+
+
+function getSoilTexture(depth) {
+ 
+  var sand = sand_mean.select('sand_' + depth + '_mean');
+  var silt = silt_mean.select('silt_' + depth + '_mean');
+  var clay = clay_mean.select('clay_' + depth + '_mean');
+
+  
+  var soilTexture = sand.addBands([silt, clay]).rename(['sand', 'silt', 'clay']);
+
+  
+  var soilTextureAtPolygon = soilTexture.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: polygon,
+    scale: 250 
+  });
+
+  
+  var sandValue = ee.Number(soilTextureAtPolygon.get('sand'));
+  var siltValue = ee.Number(soilTextureAtPolygon.get('silt'));
+  var clayValue = ee.Number(soilTextureAtPolygon.get('clay'));
+  var total = sandValue.add(siltValue).add(clayValue);
+
+  var sandPercentage = sandValue.divide(total).multiply(100);
+  var siltPercentage = siltValue.divide(total).multiply(100);
+  var clayPercentage = clayValue.divide(total).multiply(100);
+
+  var usdaTexture = calculateUsdaTexture(sandPercentage, siltPercentage, clayPercentage);
+
+  
+  return ee.Dictionary({
+    'Depth': depth,
+    'Sand (g/kg)': sandValue,
+    'Silt (g/kg)': siltValue,
+    'Clay (g/kg)': clayValue,
+    'Sand (%)': sandPercentage,
+    'Silt (%)': siltPercentage,
+    'Clay (%)': clayPercentage,
+    'USDA Texture': usdaTexture
+  });
+}
+
+
+if (polygon) {
+  
+  Map.centerObject(polygon, 10);
+
+  
+  Map.addLayer(polygon, {color: 'blue', fillColor: '00000000'}, 'Polygon');
+
+  
+  var sand_mean = ee.Image('projects/soilgrids-isric/sand_mean');
+  var silt_mean = ee.Image('projects/soilgrids-isric/silt_mean');
+  var clay_mean = ee.Image('projects/soilgrids-isric/clay_mean');
+
+  
+  var depths = ['5-15cm', '15-30cm', '30-60cm'];
+
+  
+  var soilTextureTable = depths.map(function(depth) {
+    var texture = getSoilTexture(depth);
+    return ee.Feature(null, texture);
+  });
+
+  
+  var soilTextureFeatureCollection = ee.FeatureCollection(soilTextureTable);
+
+ 
+  print('Soil texture table:', soilTextureFeatureCollection);
+
+  
+  var chart = ui.Chart.feature.byFeature(soilTextureFeatureCollection)
+    .setChartType('Table')
+    .setOptions({
+      title: 'Soil Texture Table',
+      columns: [
+        {label: 'Depth', type: 'string'},
+        {label: 'Clay (g/kg)', type: 'number'},
+        {label: 'Sand (g/kg)', type: 'number'},
+        {label: 'Silt (g/kg)', type: 'number'},
+        {label: 'Clay (%)', type: 'number'},
+        {label: 'Sand (%)', type: 'number'},
+        {label: 'Silt (%)', type: 'number'},
+        {label: 'USDA Texture', type: 'string'}
+      ]
+    });
+
+  
+  print(chart);
+
+  
+  depths.forEach(function(depth) {
+    var sand = sand_mean.select('sand_' + depth + '_mean');
+    var silt = silt_mean.select('silt_' + depth + '_mean');
+    var clay = clay_mean.select('clay_' + depth + '_mean');
+
+    Map.addLayer(sand, {min: 0, max: 100, palette: ['red', 'yellow']}, 'Sand Content (' + depth + ')');
+    Map.addLayer(silt, {min: 0, max: 100, palette: ['green', 'blue']}, 'Silt Content (' + depth + ')');
+    Map.addLayer(clay, {min: 0, max: 100, palette: ['brown', 'purple']}, 'Clay Content (' + depth + ')');
+  });
+
+  
+  var modis = ee.ImageCollection('MODIS/061/MOD13Q1')
+    .filterBounds(polygon)
+    .filterDate(startDate, endDate);
+
+  var modisProcessed = modis.select(['NDVI', 'EVI']).map(function(image) {
+    return image.multiply(0.0001).copyProperties(image, ['system:time_start']);
+  });
+
+  var ndviCount = modisProcessed.size();
+  print('Number of MODIS NDVI/EVI images in the collection:', ndviCount);
+
+  if (ndviCount.getInfo() === 0) {
+    handleMissingData('MODIS NDVI/EVI');
+  } else {
+    var ndviDates = modisProcessed.aggregate_array('system:time_start').map(function(date) {
+      return ee.Date(date).format('YYYY-MM-dd');
+    });
+    print('Available MODIS NDVI/EVI image dates:', ndviDates);
+
+    var ndviValues = modisProcessed.map(function(image) {
+      var ndviValue = image.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: polygon,
+        scale: 250,
+        maxPixels: 1e13
+      }).get('NDVI');
+      
+      var eviValue = image.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: polygon,
+        scale: 250,
+        maxPixels: 1e13
+      }).get('EVI');
+      
+      var date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd');
+      return ee.Feature(null, {
+        'NDVI': ndviValue,
+        'EVI': eviValue,
+        'Date': date
+      });
+    });
+
+    ndviValues = ndviValues.filter(ee.Filter.notNull(['NDVI', 'EVI']));
+
+    var ndviList = ndviValues.toList(ndviValues.size());
+
+    var dates = ndviList.map(function(feature) {
+      return ee.Feature(feature).get('Date');
+    }).getInfo();
+
+    var ndviArray = ndviList.map(function(feature) {
+      return ee.Feature(feature).get('NDVI');
+    }).getInfo();
+
+    var eviArray = ndviList.map(function(feature) {
+      return ee.Feature(feature).get('EVI');
+    }).getInfo();
+
+    print('Dates:', dates);
+    print('NDVI values:', ndviArray);
+    print('EVI values:', eviArray);
+
+    var ndviChart = ui.Chart.array.values({
+      array: ndviArray,
+      axis: 0,
+      xLabels: dates
+    }).setChartType('LineChart')
+      .setOptions({
+        title: 'MODIS NDVI Time Series\nSpatial resolution: 250m, Temporal resolution: 16 days, Availability: 2000 to present, Coverage: Global',
+        hAxis: {title: 'Date'},
+        vAxis: {title: 'NDVI (unitless)'},
+        lineWidth: 1,
+        pointSize: 3,
+        width: 300,
+        height: 150
+      });
+
+    var eviChart = ui.Chart.array.values({
+      array: eviArray,
+      axis: 0,
+      xLabels: dates
+    }).setChartType('LineChart')
+      .setOptions({
+        title: 'MODIS EVI Time Series\nSpatial resolution: 250m, Temporal resolution: 16 days, Availability: 2000 to present, Coverage: Global',
+        hAxis: {title: 'Date'},
+        vAxis: {title: 'EVI (unitless)'},
+        lineWidth: 1,
+        pointSize: 3,
+        width: 300,
+        height: 150
+      });
+  }
+
+  
+  var phenology = ee.ImageCollection('MODIS/061/MCD12Q2')
+                    .filterBounds(polygon)
+                    .filterDate(startDate, endDate)
+                    .first();
+
+  if (!phenology) {
+    handleMissingData('Phenology');
+  } else {
+    print('Phenology Image:', phenology);
+
+    var bands = ['Greenup_1', 'MidGreenup_1', 'Maturity_1', 
+                 'Peak_1', 'Senescence_1', 'MidGreendown_1', 'Dormancy_1'];
+
+    var extractPhenology = function(image, bandName) {
+      var value = image.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: polygon,
+        scale: 500,
+        maxPixels: 1e13
+      }).get(bandName);
+
+      return ee.Feature(null, {
+        'DOY': value,
+        'Stage': bandName
+      });
+    };
+
+    var phenologyValues = bands.map(function(band) {
+      return extractPhenology(phenology.select(band), band);
+    });
+
+    var features = ee.FeatureCollection(phenologyValues).getInfo();
+
+    var validDates = features.features.map(function(feature) {
+      var doy = feature.properties.DOY;
+      print(feature.properties.Stage + ' DOY:', doy);
+      if (doy === null || doy < 11138 || doy > 32766) {
+        print(feature.properties.Stage + ': Invalid DOY', doy);
+        return null;
+      } else {
+        var date = new Date(1970, 0, 1);
+        date.setDate(date.getDate() + doy);
+        var dateFormatted = date.toISOString().split('T')[0];
+        print(feature.properties.Stage + ':', dateFormatted);
+        return {
+          'Date': dateFormatted,
+          'Stage': feature.properties.Stage
+        };
+      }
+    }).filter(function(item) {
+      return item !== null;
+    });
+
+    if (validDates.length > 0) {
+      // Creating a dictionary to hold the dates for each stage
+      var phenologyDict = {};
+      validDates.forEach(function(item) {
+        phenologyDict[item.Stage] = item.Date;
+      });
+
+      
+      var tableData = Object.keys(phenologyDict).map(function(stage) {
+        return [stage, phenologyDict[stage]];
+      });
+
+      
+      var phenologyPanel = ui.Panel({
+        style: {width: '300px'}
+      });
+      phenologyPanel.add(ui.Label({
+        value: 'MODIS Phenology Stages\nSpatial resolution: 500m, Temporal resolution: Annual, Availability: 2001 to present, Coverage: Global',
+        style: {fontWeight: 'bold', fontSize: '12px', margin: '5px 0'}
+      }));
+      var phenologyTable = ui.Chart(tableData)
+        .setChartType('Table')
+        .setOptions({
+          allowHtml: true,
+          cssClassNames: {
+            headerRow: 'small-header',
+            tableRow: 'small-row',
+            oddTableRow: 'small-row',
+            selectedTableRow: 'small-row',
+            hoverTableRow: 'small-row'
+          },
+          width: '300px',
+          height: '150px'
+        });
+      phenologyPanel.add(phenologyTable);
+    } else {
+      print('No valid phenology dates found.');
+    }
+  }
+
+  
+  var refinedLaiCollection = ee.ImageCollection('projects/verselab-398313/assets/HiQ_LAI/wgs_500m_8d')
+    .filterBounds(polygon)
+    .filterDate(startDate, endDate);
+
+  var laiCount = refinedLaiCollection.size();
+  print('Number of High Quality Refined MODIS LAI images in the collection:', laiCount);
+
+  if (laiCount.getInfo() === 0) {
+    handleMissingData('High Quality Refined MODIS LAI');
+  } else {
+    var laiDates = refinedLaiCollection.aggregate_array('system:time_start').map(function(date) {
+      return ee.Date(date).format('YYYY-MM-dd');
+    });
+    print('Available High Quality Refined MODIS LAI image dates:', laiDates);
+
+    var laiCollection = refinedLaiCollection.select('LAI').map(function(image) {
+      return image.multiply(0.1).copyProperties(image, ['system:time_start']);
+    });
+
+    var laiValues = laiCollection.map(function(image) {
+      var laiValue = image.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: polygon,
+        scale: 500,
+        maxPixels: 1e13
+      }).get('LAI');
+      
+      var date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd');
+      return ee.Feature(null, {
+        'LAI': laiValue,
+        'Date': date
+      });
+    });
+
+    laiValues = laiValues.filter(ee.Filter.notNull(['LAI']));
+
+    var laiList = laiValues.toList(laiValues.size());
+
+    var laiDates = laiList.map(function(feature) {
+      return ee.Feature(feature).get('Date');
+    }).getInfo();
+
+    var laiArray = laiList.map(function(feature) {
+      return ee.Feature(feature).get('LAI');
+    }).getInfo();
+
+    print('Dates:', laiDates);
+    print('LAI values:', laiArray);
+
+    var laiChart = ui.Chart.array.values({
+      array: laiArray,
+      axis: 0,
+      xLabels: laiDates
+    }).setChartType('LineChart')
+      .setOptions({
+        title: 'High Quality Refined MODIS LAI Time Series\nSpatial resolution: 500m, Temporal resolution: 8 days, Availability: 2000 to 2022, Coverage: Global',
+        hAxis: {title: 'Date'},
+        vAxis: {title: 'LAI (m²/m²)'},
+        lineWidth: 1,
+        pointSize: 3,
+        width: 300,
+        height: 150
+      });
+  }
+
+  
+  var soilMoistureDataset = ee.ImageCollection('ECMWF/ERA5_LAND/MONTHLY')
+    .filterBounds(polygon)
+    .filterDate(startDate, endDate);
+
+  var soilMoistureBands = [
+    'volumetric_soil_water_layer_1', 
+    'volumetric_soil_water_layer_2', 
+    'volumetric_soil_water_layer_3', 
+    'volumetric_soil_water_layer_4'
+  ];
+
+  var soilMoistureCount = soilMoistureDataset.size();
+  print('Number of soil moisture images in the collection:', soilMoistureCount);
+
+  if (soilMoistureCount.getInfo() === 0) {
+    handleMissingData('Soil Moisture');
+  } else {
+    var soilMoistureDates = soilMoistureDataset.aggregate_array('system:time_start').map(function(d) {
+      return ee.Date(d).format('YYYY-MM-dd');
+    });
+    print('Available soil moisture image dates:', soilMoistureDates);
+
+    var extractSoilMoisture = function(image) {
+      var date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd');
+      var soilMoisture = image.select(soilMoistureBands);
+      var soilMoistureAtPoint = soilMoisture.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: polygon,
+        scale: 1000
+      });
+
+      var soilMoistureValue = ee.Number(soilMoistureAtPoint.get('volumetric_soil_water_layer_1'))
+                                .add(ee.Number(soilMoistureAtPoint.get('volumetric_soil_water_layer_2')))
+                                .add(ee.Number(soilMoistureAtPoint.get('volumetric_soil_water_layer_3')))
+                                .add(ee.Number(soilMoistureAtPoint.get('volumetric_soil_water_layer_4')))
+                                .divide(4);
+
+      return ee.Feature(null, {'date': date, 'soil_moisture': soilMoistureValue});
+    };
+
+    var soilMoistureTimeSeries = soilMoistureDataset.map(extractSoilMoisture);
+
+    var soilMoistureChart = ui.Chart.feature.byFeature(soilMoistureTimeSeries, 'date', 'soil_moisture')
+      .setOptions({
+        title: 'ECMWF/ERA5_LAND Soil Moisture Time Series\nSpatial resolution: 9km, Temporal resolution: Monthly, Availability: 1981 to present, Coverage: Global',
+        hAxis: {title: 'Date'},
+        vAxis: {title: 'Soil Moisture (m³/m³)'},
+        lineWidth: 1,
+        pointSize: 3,
+        width: 300,
+        height: 150
+      });
+
+    var mostRecentSoilMoisture = soilMoistureDataset.sort('system:time_start', false).first()
+                                      .select(soilMoistureBands)
+                                      .reduce(ee.Reducer.mean())
+                                      .rename('mean_soil_moisture');
+
+    Map.addLayer(mostRecentSoilMoisture, {min: 0, max: 0.5, palette: ['blue', 'green', 'red']}, 'Most Recent Soil Moisture');
+  }
+
+  
+  var combinedPanel = ui.Panel({
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {width: '320px', height: '320px', position: 'top-left'}
+  });
+
+  if (ndviChart) combinedPanel.add(ndviChart);
+  if (eviChart) combinedPanel.add(eviChart);
+  if (phenologyPanel) combinedPanel.add(phenologyPanel);
+  if (laiChart) combinedPanel.add(laiChart);
+  if (soilMoistureChart) combinedPanel.add(soilMoistureChart);
+
+  
+  ui.root.widgets().add(combinedPanel);
+
+  
+  if (ndviCount.getInfo() > 0) {
+    var meanNDVI = modisProcessed.select('NDVI').mean().clip(polygon);
+    var meanEVI = modisProcessed.select('EVI').mean().clip(polygon);
+    Map.addLayer(meanNDVI, {min: 0, max: 1, palette: ['yellow', 'green', 'darkgreen']}, 'Mean NDVI');
+    Map.addLayer(meanEVI, {min: 0, max: 1, palette: ['blue', 'white', 'green']}, 'Mean EVI');
+    print('Mean NDVI Image:', meanNDVI);
+    print('Mean EVI Image:', meanEVI);
+
+    var ndviValue = meanNDVI.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: polygon,
+      scale: 250,
+      maxPixels: 1e13
+    });
+
+    var eviValue = meanEVI.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: polygon,
+      scale: 250,
+      maxPixels: 1e13
+    });
+
+    ndviValue.evaluate(function(result) {
+      if (result === undefined) {
+        print('Error: NDVI value is undefined. Possible reasons: no data available or region outside of data coverage.');
+      } else {
+        print('Evaluated Mean NDVI value:', result);
+      }
+    });
+
+    eviValue.evaluate(function(result) {
+      if (result === undefined) {
+        print('Error: EVI value is undefined. Possible reasons: no data available or region outside of data coverage.');
+      } else {
+        print('Evaluated Mean EVI value:', result);
+      }
+    });
+  }
+
+  if (laiCount.getInfo() > 0) {
+    var meanLAI = laiCollection.mean().clip(polygon);
+    Map.addLayer(meanLAI, {min: 0, max: 7, palette: ['yellow', 'green', 'darkgreen']}, 'Mean LAI');
+    print('Mean LAI Image:', meanLAI);
+
+    var laiValue = meanLAI.reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: polygon,
+      scale: 500,
+      maxPixels: 1e13
+    });
+
+    laiValue.evaluate(function(result) {
+      if (result === undefined) {
+        print('Error: LAI value is undefined. Possible reasons: no data available or region outside of data coverage.');
+      } else {
+        print('Evaluated Mean LAI value:', result);
+      }
+    });
+  }
+
+  
+  Map.addLayer(polygon, {color: 'red'}, 'Polygon of Interest');
+
+ 
+  Map.setOptions('HYBRID');
+
+} else {
+  print('Error: Geometry (polygon) is not defined or null.');
+}

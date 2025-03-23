@@ -1,0 +1,12 @@
+AgroManagement:
+- 2018-01-01:
+    CropCalendar:
+      crop_name: relevant-crop
+      variety_name: relevant_crop_code
+      crop_start_date: 2018-04-06
+      crop_start_type: sowing
+      crop_end_date: 2018-07-26
+      crop_end_type: harvest
+      max_duration: 300
+    TimedEvents: null
+    StateEvents: null

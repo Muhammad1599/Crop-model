@@ -1,0 +1,9 @@
+Hi, 
+These crop files are directly from WOFOST. 
+For running simulations for any of these crops, you have to copy the whole content of file and paste it in another file ("practice_relevantcrop.crop" present in crop and agro folder) by removing the previous content.
+
+These crop files are calibrated and validated for specific regions in Europe (I preferred to keep for Germany regions). For a specific region, you can calibrate the crop parameters based on historical yield data utilizing optimization script.
+For further regions and further crops, you can access the WOFOST crop files here: https://github.com/ajwdewit/WOFOST/blob/master/cropd/bar301.cab
+
+Thanks.
+Muhammad Arslan.

@@ -1,0 +1,19 @@
+// Define the central latitude and longitude
+var centerLat = 50.1520909010391;
+var centerLon = 12.0161479046633;
+
+// Define the calculated offsets for latitude and longitude
+var latOffset = 0.000244160692;
+var lonOffset = 0.0019995563507;
+
+// Create the bounding box using the center and offsets
+var boundingBox = ee.Geometry.Rectangle([
+  centerLon - lonOffset, // Minimum longitude
+  centerLat - latOffset, // Minimum latitude
+  centerLon + lonOffset, // Maximum longitude
+  centerLat + latOffset  // Maximum latitude
+]);
+
+// Add the bounding box as a layer to the map for visualization
+Map.centerObject(boundingBox, 16); // Zoom level 16
+Map.addLayer(boundingBox, {color: 'blue'}, 'Approximate Bounding Box');
