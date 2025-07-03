@@ -1,6 +1,6 @@
 
 
-# WOFOST Model and Remote Sensing Codebase (brief-unreviewed)
+# WOFOST Model and Remote Sensing Codebase 
 
 Welcome to the **DS_CROPS** repository! Here, you’ll find **two main sets of scripts**:
 
